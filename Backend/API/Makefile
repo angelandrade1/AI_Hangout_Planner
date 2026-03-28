@@ -5,10 +5,10 @@ init-env-mac:
 	cd ../ && touch .env && cp .env.example .env
 
 setup-venv:
-	python -m venv venv && ./venv/Scripts/activate 
+	python3 -m venv venv && ./venv/Scripts/activate 
 
 install:
-	cd ../ && pip install -r requirements.txt
+	cd ../ && pip3 install -r requirements.txt
 
 run-local:
 	uvicorn main:app --reload
