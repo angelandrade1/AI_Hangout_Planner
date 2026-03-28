@@ -1,16 +1,42 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useApp } from '../context/AppContext';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { MessageCircle, LogOut } from 'lucide-react';
+import { api } from '../services/api';
 
 export function ChatHub() {
   const navigate = useNavigate();
-  const { currentUser, groups, setCurrentUser } = useApp();
+  const { currentUser, groups, setGroups, setCurrentUser, setAuthToken } = useApp();
 
-  const handleLogout = () => {
+  useEffect(() => {
+    if (!currentUser) {
+      navigate('/login');
+      return;
+    }
+
+    api.getChats(currentUser.id).then((data) => {
+      setGroups(
+        data.chats.map((chat) => ({
+          id: chat.chat_id,
+          name: chat.chat_name,
+          members: [],
+          timestamp: new Date(chat.created_at),
+        }))
+      );
+    }).catch(console.error);
+  }, [currentUser]);
+
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // ignore logout errors
+    }
     setCurrentUser(null);
-    navigate('/');
+    setAuthToken(null);
+    navigate('/login');
   };
 
   const formatTimestamp = (date?: Date) => {
@@ -41,6 +67,9 @@ export function ChatHub() {
         </div>
 
         <div className="space-y-3">
+          {groups.length === 0 && (
+            <p className="text-center text-gray-500 py-12">No chats yet. Ask a friend to add you to one!</p>
+          )}
           {groups.map((group) => (
             <Card
               key={group.id}
@@ -58,8 +87,9 @@ export function ChatHub() {
                       {formatTimestamp(group.timestamp)}
                     </span>
                   </div>
-                  <p className="text-gray-600 text-sm truncate">{group.lastMessage}</p>
-                  <p className="text-xs text-gray-400 mt-1">{group.members.length} members</p>
+                  {group.lastMessage && (
+                    <p className="text-gray-600 text-sm truncate">{group.lastMessage}</p>
+                  )}
                 </div>
               </div>
             </Card>

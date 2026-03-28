@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApp, HangoutPreference } from '../context/AppContext';
+import { api } from '../services/api';
 import {
   Dialog,
   DialogContent,
@@ -78,6 +79,16 @@ export function HangoutPreferencesModal({
     };
 
     addPreferenceToHangout(hangoutId, preference);
+
+    // Persist preferences to backend
+    api.savePreferences({
+      user_id: currentUser.id,
+      chat_id: groupId,
+      vibe,
+      suggestions: customSuggestions || null,
+      available_times: [new Date(time).toISOString()],
+      location: { street_address: location },
+    }).catch((err) => console.error('Failed to save preferences:', err));
 
     // Get updated hangout to check how many preferences we have
     const updatedHangout = hangouts.find((h) => h.id === hangoutId);

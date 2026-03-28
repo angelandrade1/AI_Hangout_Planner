@@ -1,21 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { useApp } from '../context/AppContext';
+import { useApp, Message } from '../context/AppContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
 import { ArrowLeft, Send, Sparkles, ThumbsUp, Users } from 'lucide-react';
 import { HangoutPreferencesModal } from '../components/HangoutPreferencesModal';
 import { VotingModal } from '../components/VotingModal';
+import { api } from '../services/api';
 
 export function GroupChat() {
   const { groupId } = useParams<{ groupId: string }>();
   const navigate = useNavigate();
-  const { currentUser, groups, messages, addMessage, hangouts, addHangout } = useApp();
+  const { currentUser, groups, messages, addMessage, setGroupMessages, hangouts, addHangout } = useApp();
   const [messageInput, setMessageInput] = useState('');
   const [showPreferences, setShowPreferences] = useState(false);
   const [showVoting, setShowVoting] = useState(false);
   const [activeHangoutId, setActiveHangoutId] = useState<string | null>(null);
+  const [userMap, setUserMap] = useState<{ [userId: string]: string }>({});
+  const [memberCount, setMemberCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const group = groups.find((g) => g.id === groupId);
@@ -23,48 +26,91 @@ export function GroupChat() {
   const groupHangouts = hangouts.filter((h) => h.groupId === groupId);
 
   useEffect(() => {
+    if (!currentUser) {
+      navigate('/login');
+      return;
+    }
+    if (!groupId) return;
+
+    api.openChat(groupId).then((data) => {
+      // Build userId -> displayName map from members
+      const map: { [userId: string]: string } = {};
+      data.members.forEach((m) => {
+        map[m.user_id] =
+          m.username ||
+          `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim() ||
+          m.email ||
+          'Unknown';
+      });
+      setUserMap(map);
+      setMemberCount(data.members.length);
+
+      // Map backend messages to frontend Message format
+      const mapped: Message[] = data.messages.map((msg) => ({
+        id: msg.message_id,
+        userId: msg.user_id,
+        userName: map[msg.user_id] || 'Unknown',
+        content: msg.content,
+        type: 'user',
+        timestamp: new Date(msg.created_at),
+      }));
+      setGroupMessages(groupId, mapped);
+    }).catch(console.error);
+  }, [groupId, currentUser]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [groupMessages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!messageInput.trim() || !groupId || !currentUser) return;
 
-    addMessage(groupId, {
-      id: `m${Date.now()}`,
-      userId: currentUser.id,
-      userName: currentUser.name,
-      content: messageInput,
-      type: 'user',
-      timestamp: new Date(),
-    });
-
+    const content = messageInput;
     setMessageInput('');
+
+    try {
+      const res = await api.sendMessage({ chat_id: groupId, user_id: currentUser.id, content });
+      addMessage(groupId, {
+        id: res.data.message_id,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        content: res.data.content,
+        type: 'user',
+        timestamp: new Date(res.data.created_at),
+      });
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      setMessageInput(content);
+    }
   };
 
-  const handleStartHangout = () => {
+  const handleStartHangout = async () => {
     if (!groupId || !currentUser) return;
 
-    const hangoutId = `h${Date.now()}`;
-    
-    // Create the hangout
-    addHangout({
-      id: hangoutId,
-      groupId,
-      preferences: [],
-      votes: [],
-      status: 'collecting',
-    });
+    try {
+      const res = await api.createHangout({ chat_id: groupId });
+      const hangoutId = res.hangout.hangout_id;
 
-    // Add a system message prompting users to enter preferences
-    addMessage(groupId, {
-      id: `sys${Date.now()}`,
-      userId: 'system',
-      userName: 'System',
-      content: '🎉 Hangout planning started! Click below to enter your preferences.',
-      type: 'system',
-      timestamp: new Date(),
-      hangoutId,
-    });
+      addHangout({
+        id: hangoutId,
+        groupId,
+        preferences: [],
+        votes: [],
+        status: 'collecting',
+      });
+
+      addMessage(groupId, {
+        id: `sys${Date.now()}`,
+        userId: 'system',
+        userName: 'System',
+        content: '🎉 Hangout planning started! Click below to enter your preferences.',
+        type: 'system',
+        timestamp: new Date(),
+        hangoutId,
+      });
+    } catch (err) {
+      console.error('Failed to create hangout:', err);
+    }
   };
 
   const handleOpenPreferences = (hangoutId: string) => {
@@ -96,7 +142,7 @@ export function GroupChat() {
           </Button>
           <div>
             <h2 className="font-semibold">{group?.name}</h2>
-            <p className="text-xs text-gray-500">{group?.members.length} members</p>
+            <p className="text-xs text-gray-500">{memberCount} members</p>
           </div>
         </div>
       </div>
@@ -106,7 +152,7 @@ export function GroupChat() {
         <div className="max-w-4xl mx-auto space-y-4">
           {groupMessages.map((message) => {
             const hangout = getHangoutForMessage(message.hangoutId);
-            
+
             return (
               <div
                 key={message.id}
@@ -119,7 +165,7 @@ export function GroupChat() {
                       <p className="font-semibold text-orange-900">Hangout Planning</p>
                     </div>
                     <p className="text-gray-800 mb-3">{message.content}</p>
-                    
+
                     {hangout && hangout.status === 'collecting' && (
                       <div className="space-y-2">
                         <Button
@@ -130,11 +176,11 @@ export function GroupChat() {
                           <Sparkles className="w-4 h-4 mr-2" />
                           Enter Your Preferences
                         </Button>
-                        
+
                         {hangout.preferences.length > 0 && (
                           <div className="mt-3 pt-3 border-t border-orange-200">
                             <p className="text-sm font-semibold text-gray-700 mb-1">
-                              Preferences submitted ({hangout.preferences.length}/{group?.members.length || 0}):
+                              Preferences submitted ({hangout.preferences.length}/{memberCount}):
                             </p>
                             <div className="flex flex-wrap gap-1">
                               {hangout.preferences.map((pref, idx) => (

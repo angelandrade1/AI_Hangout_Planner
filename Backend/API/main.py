@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from typing import Any
 from uuid import UUID
@@ -6,12 +6,22 @@ from uuid import UUID
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from supabase import Client, create_client
 
 load_dotenv()
 
 app = FastAPI(title="Hangout Planner API")
+
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -33,6 +43,7 @@ class SignupRequest(BaseModel):
     last_name: str
     username: str
     email: str
+    password: str
 
 
 class LoginRequest(BaseModel):
@@ -138,25 +149,25 @@ def resolve_chat_creator(request: CreateChatRequest) -> UUID:
 
 @app.post("/signup")
 async def signup(request: SignupRequest):
+    # Create Supabase Auth account first so login will work
     try:
-        existing_user_response = (
-            supabase.table("users")
-            .select("user_id, email")
-            .eq("email", request.email)
-            .limit(1)
-            .execute()
+        auth_response = supabase.auth.sign_up(
+            {"email": request.email, "password": request.password}
         )
     except Exception as exc:
-        raise_http_error("Failed to check for existing user", exc, status_code=400)
+        raise_http_error("Failed to create auth account", exc, status_code=400)
 
-    if existing_user_response.data:
-        raise HTTPException(status_code=400, detail="A user profile with that email already exists.")
+    auth_user = auth_response.user
+    if not auth_user:
+        raise HTTPException(status_code=400, detail="Failed to create auth account.")
 
+    # Insert profile into public.users using the Auth user's ID so they stay in sync
     try:
         profile_insert = (
             supabase.table("users")
             .insert(
                 {
+                    "user_id": str(auth_user.id),
                     "first_name": request.first_name,
                     "last_name": request.last_name,
                     "username": request.username,
@@ -287,7 +298,10 @@ def create_chat(request: CreateChatRequest):
     try:
         chat_response = (
             supabase.table("chats")
-            .insert({"chat_name": request.chat_name})
+            .insert({
+                "chat_name": request.chat_name,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
             .execute()
         )
     except Exception as exc:
@@ -423,4 +437,4 @@ def post_preferences(request: PreferenceRequest):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

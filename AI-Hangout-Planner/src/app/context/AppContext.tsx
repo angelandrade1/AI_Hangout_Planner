@@ -4,6 +4,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  username: string;
 }
 
 export interface Message {
@@ -46,9 +47,13 @@ export interface Group {
 interface AppContextType {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
+  authToken: string | null;
+  setAuthToken: (token: string | null) => void;
   groups: Group[];
+  setGroups: (groups: Group[]) => void;
   messages: { [groupId: string]: Message[] };
   addMessage: (groupId: string, message: Message) => void;
+  setGroupMessages: (groupId: string, messages: Message[]) => void;
   hangouts: Hangout[];
   addHangout: (hangout: Hangout) => void;
   updateHangout: (hangoutId: string, updates: Partial<Hangout>) => void;
@@ -60,58 +65,9 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [groups] = useState<Group[]>([
-    {
-      id: '1',
-      name: 'Fren group 1',
-      members: ['user1', 'user2', 'user3'],
-      lastMessage: 'Hey! Let\'s plan something fun',
-      timestamp: new Date('2026-03-27T14:30:00'),
-    },
-    {
-      id: '2',
-      name: 'Group 2',
-      members: ['user1', 'user4', 'user5'],
-      lastMessage: 'Anyone free this weekend?',
-      timestamp: new Date('2026-03-26T10:15:00'),
-    },
-    {
-      id: '3',
-      name: 'Group 3',
-      members: ['user1', 'user2', 'user6'],
-      lastMessage: 'Let\'s do brunch!',
-      timestamp: new Date('2026-03-25T09:00:00'),
-    },
-    {
-      id: '4',
-      name: 'Group 4',
-      members: ['user1', 'user3', 'user7'],
-      lastMessage: 'Movie night soon?',
-      timestamp: new Date('2026-03-24T18:45:00'),
-    },
-  ]);
-
-  const [messages, setMessages] = useState<{ [groupId: string]: Message[] }>({
-    '1': [
-      {
-        id: 'm1',
-        userId: 'user2',
-        userName: 'Sarah',
-        content: 'Hey! Let\'s plan something fun',
-        type: 'user',
-        timestamp: new Date('2026-03-27T14:30:00'),
-      },
-      {
-        id: 'm2',
-        userId: 'user3',
-        userName: 'Mike',
-        content: 'Yeah! I\'m down. What are you thinking?',
-        type: 'user',
-        timestamp: new Date('2026-03-27T14:35:00'),
-      },
-    ],
-  });
-
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [messages, setMessages] = useState<{ [groupId: string]: Message[] }>({});
   const [hangouts, setHangouts] = useState<Hangout[]>([]);
 
   const addMessage = (groupId: string, message: Message) => {
@@ -119,6 +75,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...prev,
       [groupId]: [...(prev[groupId] || []), message],
     }));
+  };
+
+  const setGroupMessages = (groupId: string, msgs: Message[]) => {
+    setMessages(prev => ({ ...prev, [groupId]: msgs }));
   };
 
   const addHangout = (hangout: Hangout) => {
@@ -162,9 +122,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       value={{
         currentUser,
         setCurrentUser,
+        authToken,
+        setAuthToken,
         groups,
+        setGroups,
         messages,
         addMessage,
+        setGroupMessages,
         hangouts,
         addHangout,
         updateHangout,
