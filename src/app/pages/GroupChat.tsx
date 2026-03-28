@@ -32,15 +32,33 @@ function mock(prefs: any[], round: number, changes?: string) {
   return `🎉 Round ${round} suggestion based on ${prefs.length} preference${prefs.length>1?'s':''}:\n\n📍 ${spot}\n🕒 ${win}\n✨ Vibe: ${vibe}\n\n${changes ? `Taking your feedback into account: "${changes}"\n\n` : ''}Perfect for a ${vibe.toLowerCase()} LinkedUp — everyone should love it!${suggs.length ? `\n💡 Also considering: ${suggs.join(', ')}` : ''}`;
 }
 
-async function getAISuggestion(prefs: any[], round: number, changes?: string) {
+async function getAISuggestion(prefs: any[], round: number, changes?: string, groupId?: string) {
   try {
-    const res = await fetch('/api/suggest', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prefs, changes }) });
+    const pref = prefs[0];
+    const formData = new FormData();
+    formData.append('preferred_time', `${pref.availabilityStart} to ${pref.availabilityEnd}`);
+    formData.append('desired_vibe', pref.vibe);
+    formData.append('your_location', pref.location);
+    if (pref.customSuggestions) formData.append('custom_suggestions', pref.customSuggestions);
+
+    const id = groupId || 'group';
+    const res = await fetch(`http://localhost:8000/group/${id}`, {
+      method: 'POST',
+      body: formData,
+    });
+
     if (!res.ok) throw new Error('Server error');
     const data = await res.json();
-    if (data.suggestion) return data.suggestion;
-  } catch { /* fall through */ }
-  return mock(prefs, round, changes);
+    return formatSuggestion(data, round);
+  } catch {
+    return mock(prefs, round, changes);
+  }
 }
+
+function formatSuggestion(data: { location: string; activity: string; reasoning: string }, round: number) {
+  return `📍 ${data.location}\n🎯 ${data.activity}\n💡 ${data.reasoning}`;
+}
+
 
 export function GroupChat() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -237,23 +255,61 @@ function SystemCard({ msg, LinkedUp, group, onOpenPrefs }: any) {
 // ── AI card ──
 function AiCard({ msg, LinkedUp, onVote }: any) {
   const fin = LinkedUp?.status === 'finalized';
+
+  // Try to parse structured data from the message
+  const lines = msg.content.split('\n').filter(Boolean);
+  const location = lines.find((l: string) => l.startsWith('📍'))?.replace('📍 ', '');
+  const activity = lines.find((l: string) => l.startsWith('🎯'))?.replace('🎯 ', '');
+  const reasoning = lines.find((l: string) => l.startsWith('💡'))?.replace('💡 ', '');
+  const isStructured = location && activity && reasoning;
+
   return (
     <div style={{ background:'var(--bg2)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius)', padding:'14px 16px', maxWidth:580, animation:'fadeUp .3s ease' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:10 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:12 }}>
         <Sparkles size={14} color="var(--accent2)" />
         <span style={{ fontSize:13, fontWeight:600, color:'var(--accent2)' }}>AI Suggestion</span>
-        {LinkedUp?.currentRound > 1 && <span style={{ marginLeft:'auto', fontSize:11, color:'var(--text3)', background:'var(--bg3)', border:'1px solid var(--border)', padding:'2px 8px', borderRadius:20 }}>Round {LinkedUp.currentRound}</span>}
+        {LinkedUp?.currentRound > 1 && (
+          <span style={{ marginLeft:'auto', fontSize:11, color:'var(--text3)', background:'var(--bg3)', border:'1px solid var(--border)', padding:'2px 8px', borderRadius:20 }}>
+            Round {LinkedUp.currentRound}
+          </span>
+        )}
       </div>
-      <div style={{ fontSize:13, lineHeight:1.7, whiteSpace:'pre-line', color:'var(--text)' }}>{msg.content}</div>
+
+      {isStructured ? (
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 14px' }}>
+            <div style={{ fontSize:11, color:'var(--text3)', fontWeight:600, textTransform:'uppercase', letterSpacing:'.05em', marginBottom:4 }}>Location</div>
+            <div style={{ fontSize:14, fontWeight:500, color:'var(--text)' }}>📍 {location}</div>
+          </div>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 14px' }}>
+            <div style={{ fontSize:11, color:'var(--text3)', fontWeight:600, textTransform:'uppercase', letterSpacing:'.05em', marginBottom:4 }}>Activity</div>
+            <div style={{ fontSize:14, fontWeight:500, color:'var(--text)' }}>🎯 {activity}</div>
+          </div>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 14px' }}>
+            <div style={{ fontSize:11, color:'var(--text3)', fontWeight:600, textTransform:'uppercase', letterSpacing:'.05em', marginBottom:4 }}>Why it fits</div>
+            <div style={{ fontSize:13, color:'var(--text2)', lineHeight:1.6 }}>💡 {reasoning}</div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ fontSize:13, lineHeight:1.7, whiteSpace:'pre-line', color:'var(--text)' }}>{msg.content}</div>
+      )}
+
       {!fin && msg.LinkedUpId && (
         <button onClick={() => onVote(msg.LinkedUpId)} style={{ marginTop:12, height:32, padding:'0 14px', background:'transparent', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-sm)', color:'var(--accent2)', fontSize:12, fontWeight:500, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6 }}>
           <ThumbsUp size={13} /> Vote on This
         </button>
       )}
-      {fin && <div style={{ fontSize:12, color:'var(--green)', marginTop:10, display:'flex', alignItems:'center', gap:5 }}>✅ This plan was approved!</div>}
+      {fin && (
+        <div style={{ fontSize:12, color:'var(--green)', marginTop:10, display:'flex', alignItems:'center', gap:5 }}>
+          ✅ This plan was approved!
+        </div>
+      )}
     </div>
   );
 }
+
+const GEMINI_API_KEY="AIzaSyAXjNgrysTPlvt3FvUdrI3h5HjIHJOZRYw";
+
 
 // ── Preferences Modal ──
 function PrefsModal({ LinkedUpId, groupId, onClose, onSubmit }: any) {

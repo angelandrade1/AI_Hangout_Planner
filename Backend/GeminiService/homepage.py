@@ -1,16 +1,8 @@
-from fastapi import FastAPI, HTTPException 
-from supabase import create_client, Client
-from dotenv import load_dotenv
-import os
-import uvicorn
-
 from fastapi import HTTPException
-import google.generativeai as genai
+from google.generativeai import genai
 from fastapi import FastAPI, Form
 from typing import Optional
 from fastapi.responses import JSONResponse
-
-load_dotenv()
 
 app = FastAPI()
 
@@ -26,7 +18,7 @@ def parse_gemini_response(raw_text: str) -> dict:
         "reasoning": sections[2] if len(sections) > 2 else ""
     }
 
-@app.post("/group/ounasyhh")
+@app.post("/preferences")
 async def submit(
     preferred_time: str = Form(...), 
     desired_vibe: str = Form(...), 
@@ -48,20 +40,14 @@ async def submit(
     2. A specific activity to do there
     3. Why it fits the preferred time and vibe
     """
-    client = genai.Client(api_key="AIzaSyAXjNgrysTPlvt3FvUdrI3h5HjIHJOZRYw")
-    
-    response = client.models.generate_content(
-        model="models/gemini-2.5-pro",
-        contents=prompt
-    )
-    parsed = parse_gemini_response(response.text)
-    return JSONResponse(content=parsed)
-
-
-
-@app.get("/")
-def home():
-    return {"message" : "Hello World"}
-
-if __name__ == "__main__":
-    uvicorn.run(app)
+    try:
+        client = genai.Client(api_key="###")
+        
+        response = client.models.generate_content(
+            model="models/gemini-2.5-pro",
+            contents=prompt
+        )
+        parsed = parse_gemini_response(response.text)
+        return JSONResponse(content=parsed)
+    except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
