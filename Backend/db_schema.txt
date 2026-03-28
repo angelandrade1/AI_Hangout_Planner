@@ -1,0 +1,67 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.chats (
+  created_at timestamp with time zone NOT NULL,
+  chat_name text NOT NULL,
+  chat_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  CONSTRAINT chats_pkey PRIMARY KEY (chat_id)
+);
+CREATE TABLE public.hangout_preferences (
+  vibe text,
+  suggestions text,
+  available_times json,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  user_id uuid NOT NULL,
+  chat_id uuid NOT NULL,
+  location_id uuid,
+  CONSTRAINT hangout_preferences_pkey PRIMARY KEY (user_id, chat_id),
+  CONSTRAINT hangout_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id),
+  CONSTRAINT hangout_preferences_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(chat_id),
+  CONSTRAINT hangout_preferences_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.locations(location_id)
+);
+CREATE TABLE public.hangouts (
+  vibe text,
+  event_time timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  hangout_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  chat_id uuid,
+  location_id uuid,
+  CONSTRAINT hangouts_pkey PRIMARY KEY (hangout_id),
+  CONSTRAINT hangouts_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(chat_id),
+  CONSTRAINT hangouts_location_id_fkey FOREIGN KEY (location_id) REFERENCES public.locations(location_id)
+);
+CREATE TABLE public.locations (
+  street_address text,
+  city text,
+  state text,
+  zip text,
+  location_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  CONSTRAINT locations_pkey PRIMARY KEY (location_id)
+);
+CREATE TABLE public.messages (
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  content text NOT NULL,
+  message_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid,
+  chat_id uuid,
+  CONSTRAINT messages_pkey PRIMARY KEY (message_id),
+  CONSTRAINT messages_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(chat_id),
+  CONSTRAINT messages_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id)
+);
+CREATE TABLE public.users (
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  username text NOT NULL UNIQUE,
+  user_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  first_name text,
+  last_name text,
+  email text,
+  CONSTRAINT users_pkey PRIMARY KEY (user_id)
+);
+CREATE TABLE public.users_to_chats (
+  user_id uuid NOT NULL,
+  chat_id uuid NOT NULL,
+  CONSTRAINT users_to_chats_pkey PRIMARY KEY (user_id, chat_id),
+  CONSTRAINT users_to_chats_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(chat_id),
+  CONSTRAINT users_to_chats_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id)
+);
